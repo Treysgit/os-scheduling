@@ -12,18 +12,18 @@
 // Shared data for all cores
 typedef struct SchedulerData {
     std::mutex queue_mutex;
-    ScheduleAlgorithm algorithm;
-    uint32_t context_switch;
-    uint32_t time_slice;
-    std::list<Process*> ready_queue;
-    bool all_terminated;
+    ScheduleAlgorithm algorithm; //1 of 4
+    uint32_t context_switch; //time of switching processes on a core
+    uint32_t time_slice; //fixed time-slice for RR
+    std::list<Process*> ready_queue; //list of pointers to processes
+    bool all_terminated; // indicate all processes are done
 } SchedulerData;
 
-void coreRunProcesses(uint8_t core_id, SchedulerData *data);
-void printProcessOutput(std::vector<Process*>& processes);
-std::string makeProgressString(double percent, uint32_t width);
-uint64_t currentTime();
-std::string processStateToString(Process::State state);
+void coreRunProcesses(uint8_t core_id, SchedulerData *data); // Used for dispatcher thread for each core
+void printProcessOutput(std::vector<Process*>& processes); // table
+std::string makeProgressString(double percent, uint32_t width); // progress bar in table
+uint64_t currentTime(); // used for measuring elapsed time
+std::string processStateToString(Process::State state); // convert the state (e.g., running) to a string
 
 int main(int argc, char *argv[])
 {
@@ -36,8 +36,8 @@ int main(int argc, char *argv[])
 
     // Declare variables used throughout main
     int i;
-    SchedulerData *shared_data = new SchedulerData();
-    std::vector<Process*> processes;
+    SchedulerData *shared_data = new SchedulerData(); // put new SchedulerData object on heap, return address for pointer shared_data
+    std::vector<Process*> processes; // dynamic array for process pointers
 
     // Read configuration file for scheduling simulation
     SchedulerConfig *config = scr::readConfigFile(argv[1]);
@@ -53,14 +53,16 @@ int main(int argc, char *argv[])
 
     // Create processes
     uint64_t start = currentTime();
+    // loop through every process in config object
     for (i = 0; i < config->num_processes; i++)
     {
-        Process *p = new Process(config->processes[i], start);
-        processes.push_back(p);
-        // If process should be launched immediately, add to ready queue
+        Process *p = new Process(config->processes[i], start); // create a new process object for process i, p pointer to heap
+        processes.push_back(p); //add pointer to tail of vector for processes
+
+        // If created process's start time is 0, it is ready to be put on ready-queue immidiately
         if (p->getState() == Process::State::Ready)
         {
-            shared_data->ready_queue.push_back(p);
+            shared_data->ready_queue.push_back(p); // put process in struct ready queue
         }
     }
 
@@ -68,9 +70,10 @@ int main(int argc, char *argv[])
     scr::deleteConfig(config);
 
     // Launch 1 scheduling thread per cpu core
-    std::thread *schedule_threads = new std::thread[num_cores];
+    std::thread *schedule_threads = new std::thread[num_cores]; // pointer for heap thread array. 1 dispatcher per core
     for (i = 0; i < num_cores; i++)
     {
+        // create and run dispatcher threads for each core, store objects in array 
         schedule_threads[i] = std::thread(coreRunProcesses, i, shared_data);
     }
 
@@ -86,6 +89,36 @@ int main(int argc, char *argv[])
         //     - NOTE: ensure processes are inserted into the ready queue at the proper position based on algorithm
         //   - Determine if all processes are in the terminated state
         //   - * = accesses shared data (ready queue), so be sure to use proper synchronization
+
+        uint64_t ct = currentTime();
+        uint64_t elapsed = ct - start; // differnce of start of program and current time
+
+        // Task 1: If time elapsed > the time before the process is available, it must be put in the ready-queue if it hasn't been
+        // go through each process in vector
+        for(int i = 0 ; i < processes.size() ; i++){
+
+            Process *p = processes[i]; // pointer to process i
+            if((p->getState() == Process::State::NotStarted) && (elapsed >= p->getStartTime())){
+
+                // Set state to ready. Give current time 
+                p->setState(Process::State::Ready, ct);
+
+                if(shared_data->algorithm == ScheduleAlgorithm::SJF){
+                    // helper function -- order based on shortest aggregate CPU time
+                }
+                else if(shared_data->algorithm == ScheduleAlgorithm::PP){
+                    //helper function -- order based on priority field
+                }
+                else{
+                    // FCFS and RR just send to the back of ready-queue
+                    shared_data->ready_queue.push_back(p);
+                }
+
+            }
+
+
+        }
+
 
         // Maybe simply print progress bar for all procs?
         printProcessOutput(processes);
