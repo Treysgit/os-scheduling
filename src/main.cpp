@@ -51,19 +51,23 @@ int main(int argc, char *argv[])
     shared_data->time_slice = config->time_slice;
     shared_data->all_terminated = false;
 
+
     // Create processes
     uint64_t start = currentTime();
     // loop through every process in config object
     for (i = 0; i < config->num_processes; i++)
     {
         Process *p = new Process(config->processes[i], start); // create a new process object for process i, p pointer to heap
-        processes.push_back(p); //add pointer to tail of vector for processes
+        processes.push_back(p); //add pointer of new process to tail of vector 
 
         // If created process's start time is 0, it is ready to be put on ready-queue immidiately
         if (p->getState() == Process::State::Ready)
         {
             shared_data->ready_queue.push_back(p); // put process in struct ready queue
         }
+        //vectors:
+        // processes --> for keeping track of all processes 
+        // ready-queue --> for when those processes have start time = elapsed (or re-entered)
     }
 
     // Free configuration data from memory
@@ -73,7 +77,7 @@ int main(int argc, char *argv[])
     std::thread *schedule_threads = new std::thread[num_cores]; // pointer for heap thread array. 1 dispatcher per core
     for (i = 0; i < num_cores; i++)
     {
-        // create and run dispatcher threads for each core, store objects in array 
+        // create and run dispatcher threads for each core, store thread objects in array 
         schedule_threads[i] = std::thread(coreRunProcesses, i, shared_data);
     }
 
@@ -90,18 +94,18 @@ int main(int argc, char *argv[])
         //   - Determine if all processes are in the terminated state
         //   - * = accesses shared data (ready queue), so be sure to use proper synchronization
 
-        uint64_t ct = currentTime();
-        uint64_t elapsed = ct - start; // differnce of start of program and current time
+        uint64_t current_time = currentTime();
+        uint64_t elapsed = current_time - start; // differnce of start of program and current time
 
-        // Task 1: If time elapsed > the time before the process is available, it must be put in the ready-queue if it hasn't been
-        // go through each process in vector
+        // Task 1: If time elapsed > the time before the process is available, it must be put in the ready-queue if it hasn't been.
+        // Go through each process in vector
         for(int i = 0 ; i < processes.size() ; i++){
 
             Process *p = processes[i]; // pointer to process i
             if((p->getState() == Process::State::NotStarted) && (elapsed >= p->getStartTime())){
 
                 // Set state to ready. Give current time 
-                p->setState(Process::State::Ready, ct);
+                p->setState(Process::State::Ready, current_time); // launch_time = current_time
 
                 if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest aggregate CPU time

@@ -128,11 +128,76 @@ void Process::interruptHandled()
 
 void Process::updateProcess(uint64_t current_time)
 {
-    // use `current_time` to update turnaround time, wait time, burst times, 
-    // cpu time, and remaining time
+// `current_time` updates: turnaround time, wait time, burst times, cpu time, remaining time
+
+// relevant members of process class:
+	// state → NotStarted, Ready, Running, etc.
+	// burst_start_time → the start or last update time of the current state
+	// burst_times[i] → remaining time of each burst in respective process
+	// current_burst → index in array of current burst of respective process
+	//—————————————————————
+	// wait_time → total time spent in Ready state
+	// cpu_time → total time spent executing on CPU
+	// turn_time → total time since initial Ready state until now
+	// remain_time → remaining aggregate CPU time for respective process
+
+    // exit if terminated or not yet in ready-queue
+    if(state == State::NotStarted || state == State::Terminated){
+        return;
+    }
+
+    //get the elapsed time since last update of process in state Ready, Running, or IO
+    uint64_t elapsed = current_time - burst_start_time;
+    //if no time passed since the last update, there's nothing to update
+    if(elapsed = 0){
+        return;
+    }
+
+    //Case 1: Ready state update (no burst consumed)
+    if(state == State::Ready){
+        wait_time += elapsed; //update time spent in current Ready state
+        turn_time += elapsed; //update aggregate time since entering ready-queue
+    }
+
+    //Case 2: Running state update (CPU burst consumed)
+    else if(state == State::Running){
+
+        uint64_t consumed = elapsed;
+        //amount of burst consumed can't be > amount left
+        if(consumed > burst_times[current_burst]){
+            //store actual amount consumed
+            consumed = burst_times[current_burst];
+        }
+        
+        burst_times[current_burst] -= consumed; //update burst with the amount consumed
+        cpu_time += consumed; //update aggregate CPU time of process
+        turn_time += consumed; //update aggregate time since entering ready-queue
+        remain_time -= consumed; //decrease aggregate CPU time remaining for process
+    }
+
+    //Case 3: IO state update (IO burst consumed)
+    else if(state == State::IO){
+        // same logic as CPU burst 
+        uint64_t consumed = elapsed; 
+         if(consumed > burst_times[current_burst]){
+            consumed = burst_times[current_burst];
+        }
+    
+        burst_times[current_burst] -= consumed; //update burst with the amount consumed
+        turn_time += consumed; //update aggregate time since entering ready-queue
+
+    }
+
+    // updates of elapsed time accounted for. Reset for next update
+    burst_start_time = current_time;
+}
+
+
 
     
-}
+
+    
+
 
 void Process::updateBurstTime(int burst_idx, uint32_t new_time)
 {
