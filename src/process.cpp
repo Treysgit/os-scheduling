@@ -57,6 +57,17 @@ uint64_t Process::getBurstStartTime() const
     return burst_start_time;
 }
 
+// added for dispatcher
+uint64_t Process::getBurstTime() const{
+    return burst_times[current_burst];
+
+}
+// added for dispatcher
+void Process::incrementBurst(){
+    current_burst++; // index increment
+}
+
+
 Process::State Process::getState() const
 {
     return state;
@@ -96,6 +107,7 @@ double Process::getRemainingTime() const
 {
     return (double)remain_time / 1000.0;
 }
+
 
 void Process::setBurstStartTime(uint64_t current_time)
 {
@@ -149,7 +161,7 @@ void Process::updateProcess(uint64_t current_time)
     //get the elapsed time since last update of process in state Ready, Running, or IO
     uint64_t elapsed = current_time - burst_start_time;
     //if no time passed since the last update, there's nothing to update
-    if(elapsed = 0){
+    if(elapsed == 0){
         return;
     }
 
