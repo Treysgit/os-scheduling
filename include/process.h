@@ -31,6 +31,10 @@ public:
     Process(ProcessDetails details, uint64_t current_time);
     ~Process();
 
+    //added 
+    uint64_t getBurstTime() const;
+    void incrementBurst();
+
     uint16_t getPid() const;
     uint32_t getStartTime() const;
     uint8_t getPriority() const;

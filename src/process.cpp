@@ -18,6 +18,7 @@ Process::Process(ProcessDetails details, uint64_t current_time)
     if (state == State::Ready)
     {
         launch_time = current_time;
+        burst_start_time = current_time;
     }
     is_interrupted = false;
     core = -1;
@@ -100,7 +101,7 @@ double Process::getCpuTime() const
 
 double Process::getTotalRunTime() const
 {
-    return (double)remain_time / 1000.0;
+    return (double)total_time / 1000.0;
 }
 
 double Process::getRemainingTime() const

@@ -25,6 +25,10 @@ std::string makeProgressString(double percent, uint32_t width); // progress bar 
 uint64_t currentTime(); // used for measuring elapsed time
 std::string processStateToString(Process::State state); // convert the state (e.g., running) to a string
 
+//algo helpers
+void algo_SJF(std::list<Process*>& ready_queue, Process* p);
+
+
 int main(int argc, char *argv[])
 {
     // Ensure user entered a command line parameter for configuration file name
@@ -109,7 +113,7 @@ int main(int argc, char *argv[])
 
                 // Set notStarted to Ready. Give launch time
                 p->setState(Process::State::Ready, current_time); 
-                std::lock_guaard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
+                std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                 if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest aggregate CPU time
                 }
@@ -131,21 +135,54 @@ int main(int argc, char *argv[])
             if((p->getState() == Process::State::IO)){
 
                 p->updateProcess(current_time); // if IO burst time is updated to 0, it is completed
-                if(p->getBurstStartTime() == 0){
+                if(p->getBurstTime() == 0){
                     
                     // move to next burst and update process state
                     // put into ready queue based on 3 algos
 
-                    p->incrementBurst
+                    p->incrementBurst(); //move to next burst index
+                    p->setState(Process::State::Ready, current_time); //IO to Ready
+                    p->setBurstStartTime(current_time); // account for start of burst
+                    std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
+                    if(shared_data->algorithm == ScheduleAlgorithm::SJF){
+                    // helper function -- order based on shortest burst
+                        algo_SJF(shared_data->ready_queue, p);
+                    }
+                    else if(shared_data->algorithm == ScheduleAlgorithm::PP){
+                    //helper function -- order based on priority field
+                    }
+                    else{
+                    // FCFS and RR just send to the back of ready-queue
+                    shared_data->ready_queue.push_back(p);
+                }
+
+                    
                 }
 
             }
         }
 
-        // Task 3: preempt check (time-slice for RR)
+        // Task 3: preempt check (RR or PP)
+                if(shared_data->algorithm == ScheduleAlgorithm::RR){
+                    // helper function 
+                  }
+                else if(shared_data->algorithm == ScheduleAlgorithm::PP){
+                    //helper function 
+                 }
+                 
 
         // Task 4: Check if all process terminated
+        
+        int flag = 1;
+        for(int i = 0 ; i < processes.size() ; i++){
+            if(processes[i]->getState() != Process::State::Terminated){
+                //if any are not Terminated, CPUs need to run still
+                flag = 0;
+                break;
 
+            }
+        }
+        shared_data->all_terminated = flag;
 
         // Maybe simply print progress bar for all procs?
         printProcessOutput(processes);
@@ -156,6 +193,8 @@ int main(int argc, char *argv[])
         // clear outout
         erase();
     }
+
+
 
 
     // wait for threads to finish
@@ -193,7 +232,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         { //mutex scope
               std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock mutex before critical seciton
                 // if ready-queue isn't empty store the head process, remove it from queue
-              if(!(shared_data->ready_queue.empty()){
+              if(!(shared_data->ready_queue.empty())){
                 current_process = shared_data->ready_queue.front(); //head process
                 shared_data->ready_queue.pop_front(); //remove from queue
                 found = 1;
@@ -216,7 +255,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         // Ready to Running
         uint64_t current_time = currentTime();
         current_process->setState(Process::State::Running, current_time);
-        current_process->setBurstStartTime; //set so burst can be updated after elapsed time
+        current_process->setBurstStartTime(current_time); //account for start of burst
 
         // execute burst on CPU until completed or preempted (PP or RR)
         while(current_process->getBurstTime() > 0){
@@ -239,20 +278,20 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
         // dipatcher handles updating the process with its next burst and 
         // updating its state to IO or Terminated
-        if(current_process->getBurstTime == 0){
+        if(current_process->getBurstTime() == 0){
             current_process->incrementBurst(); //update burst index
 
             //Case 1: Running to Terminate
             // if remaining aggregate CPU time is 0, then terminate since it ends with CPU burst
-            if(current_process->getRemainingTime){
+            if(current_process->getRemainingTime() == 0){
                 current_process->setState(Process::State::Terminated, current_time);
-                setCpuCore(-1); //remove Core
+                current_process->setCpuCore(-1); //remove Core
             }
 
             //Case 2: Running to IO 
             else{
                 current_process->setState(Process::State::IO, current_time); //change to IO
-                current_process->setBurstStartTime(current_time)
+                current_process->setBurstStartTime(current_time);
                 current_process->setCpuCore(-1); //remove core
 
             }
@@ -349,3 +388,29 @@ std::string processStateToString(Process::State state)
     }
     return str;
 }
+
+// algo helpers
+    void algo_SJF(std::list<Process*>& ready_queue, Process* p){
+        
+        // use iterator for list indexing
+        // list.begin() returns an iterator of first element
+        std::list<Process*>::iterator i = ready_queue.begin();
+
+        //loop through sorted ready-queue, insert when p burst < burst at index
+        while(i != ready_queue.end()){
+
+            //get process at index i
+            Process *p_i = *i; // return pointer at index
+
+            //check if process p burst is < burst at index i
+            if(p->getBurstTime() < p_i->getBurstTime()){
+                break; // found insertion spot, break out of loop
+            }
+            i++;
+        }
+        // list.insert(iterator position, const T& value)
+        ready_queue.insert(
+            i, // iterator with updated index
+            p //process to insert
+        );
+    }
