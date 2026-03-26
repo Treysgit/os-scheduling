@@ -114,10 +114,11 @@ int main(int argc, char *argv[])
             if((p->getState() == Process::State::NotStarted) && (elapsed >= p->getStartTime())){
 
                 // Set notStarted to Ready. Give launch time
+                std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                 p->setState(Process::State::Ready, current_time);
                 p->setBurstStartTime(current_time); 
                 p->setReadyEnterTime(current_time);
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
+
                 if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest aggregate CPU time
                 }
@@ -145,10 +146,11 @@ int main(int argc, char *argv[])
                     // put into ready queue based on 3 algos
 
                     p->incrementBurst(); //move to next burst index
+                    std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                     p->setState(Process::State::Ready, current_time); //IO to Ready
                     p->setBurstStartTime(current_time); // account for start of burst
                     p->setReadyEnterTime(current_time);
-                    std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
+
                     if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest burst
                         algo_SJF(shared_data->ready_queue, p);
@@ -251,8 +253,8 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 current_process = shared_data->ready_queue.front();
                 shared_data->ready_queue.pop_front();
                 found = 1;
-                printw("Core %d picked PID %d\n", core_id, current_process->getPid());
-                refresh();
+                std::cerr << "Core " << (int)core_id
+                << " picked PID " << current_process->getPid() << std::endl;
             }
         } // mutex scope
 
