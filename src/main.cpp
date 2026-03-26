@@ -114,7 +114,8 @@ int main(int argc, char *argv[])
             if((p->getState() == Process::State::NotStarted) && (elapsed >= p->getStartTime())){
 
                 // Set notStarted to Ready. Give launch time
-                p->setState(Process::State::Ready, current_time); 
+                p->setState(Process::State::Ready, current_time);
+                p->setBurstStartTime(current_time); 
                 p->setReadyEnterTime(current_time);
                 std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                 if(shared_data->algorithm == ScheduleAlgorithm::SJF){
