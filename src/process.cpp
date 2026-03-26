@@ -1,5 +1,8 @@
 #include "process.h"
 
+
+
+
 // Process class methods
 Process::Process(ProcessDetails details, uint64_t current_time)
 {
@@ -25,6 +28,7 @@ Process::Process(ProcessDetails details, uint64_t current_time)
     turn_time = 0;
     wait_time = 0;
     cpu_time = 0;
+    ready_enter_time = 0;
     total_time = 0;
     for (i = 0; i < num_bursts; i+=2)
     {
@@ -141,6 +145,7 @@ void Process::interruptHandled()
 
 void Process::updateProcess(uint64_t current_time)
 {
+    
 // `current_time` updates: turnaround time, wait time, burst times, cpu time, remaining time
 
 // relevant members of process class:
@@ -206,7 +211,17 @@ void Process::updateProcess(uint64_t current_time)
 }
 
 
+void Process::setReadyEnterTime(uint64_t t){
+    ready_enter_time = t;
+}
 
+uint64_t Process::getReadyEnterTime() const{
+    return ready_enter_time;
+}
+
+void Process::addWaitTime(uint64_t delta){
+    wait_time += delta;
+}
     
 
     
