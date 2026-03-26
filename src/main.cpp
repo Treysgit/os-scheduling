@@ -114,10 +114,10 @@ int main(int argc, char *argv[])
             if((p->getState() == Process::State::NotStarted) && (elapsed >= p->getStartTime())){
 
                 // Set notStarted to Ready. Give launch time
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                 p->setState(Process::State::Ready, current_time);
                 p->setBurstStartTime(current_time); 
                 p->setReadyEnterTime(current_time);
+                std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
 
                 if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest aggregate CPU time
@@ -141,12 +141,12 @@ int main(int argc, char *argv[])
 
                 p->updateProcess(current_time); // if IO burst time is updated to 0, it is completed
                 if(p->getBurstTime() == 0){
-                    
+                    std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
+                   
                     // move to next burst and update process state
                     // put into ready queue based on 3 algos
 
                     p->incrementBurst(); //move to next burst index
-                    std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                     p->setState(Process::State::Ready, current_time); //IO to Ready
                     p->setBurstStartTime(current_time); // account for start of burst
                     p->setReadyEnterTime(current_time);
