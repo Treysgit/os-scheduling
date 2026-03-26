@@ -5,6 +5,7 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include <ncurses.h>
 #include "configreader.h"
 #include "process.h"
@@ -16,7 +17,7 @@ typedef struct SchedulerData {
     uint32_t context_switch; //time of switching processes on a core
     uint32_t time_slice; //fixed time-slice for RR
     std::list<Process*> ready_queue; //list of pointers to processes
-    bool all_terminated; // indicate all processes are done
+    std::atomic<bool> all_terminated; // indicate all processes are done
 } SchedulerData;
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *data); // Used for dispatcher thread for each core
