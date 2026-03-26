@@ -67,6 +67,7 @@ int main(int argc, char *argv[])
         // If created process's start time is 0, it is ready to be put on ready-queue immidiately
         if (p->getState() == Process::State::Ready)
         {
+            p->setReadyEnterTime(start);
             shared_data->ready_queue.push_back(p); // put process in struct ready queue
         }
         //vectors:
@@ -113,6 +114,7 @@ int main(int argc, char *argv[])
 
                 // Set notStarted to Ready. Give launch time
                 p->setState(Process::State::Ready, current_time); 
+                p->setReadyEnterTime(current_time);
                 std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                 if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest aggregate CPU time
@@ -143,6 +145,7 @@ int main(int argc, char *argv[])
                     p->incrementBurst(); //move to next burst index
                     p->setState(Process::State::Ready, current_time); //IO to Ready
                     p->setBurstStartTime(current_time); // account for start of burst
+                    p->setReadyEnterTime(current_time);
                     std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
                     if(shared_data->algorithm == ScheduleAlgorithm::SJF){
                     // helper function -- order based on shortest burst
@@ -211,6 +214,16 @@ int main(int argc, char *argv[])
     //     - Overall average
     //  - Average turnaround time
     //  - Average waiting time
+    double total_wait = 0.0;
+    for (int i = 0; i < processes.size(); i++)
+    {
+        total_wait += processes[i]->getWaitTime();
+    }
+
+    double avg_wait = total_wait / processes.size();
+
+    printw("Average waiting time: %.2f ms\n", avg_wait);
+refresh();
 
 
     // Clean up before quitting program
@@ -230,14 +243,13 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         int found = 0; // flag
        
         { //mutex scope
-              std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock mutex before critical seciton
-                // if ready-queue isn't empty store the head process, remove it from queue
-              if(!(shared_data->ready_queue.empty())){
-                current_process = shared_data->ready_queue.front(); //head process
-                shared_data->ready_queue.pop_front(); //remove from queue
-                found = 1;
+            std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
 
-              }
+            if(!(shared_data->ready_queue.empty())){
+                current_process = shared_data->ready_queue.front();
+                shared_data->ready_queue.pop_front();
+                found = 1;
+            }
         } // mutex scope
 
         // if no process in ready-queue, make core wait then redo the while loop
@@ -246,6 +258,9 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             continue; // restarts while loop
         }
 
+        uint64_t current_time = currentTime();
+        current_process->addWaitTime(current_time - current_process->getReadyEnterTime());
+
         // context switch -- dispatcher loads state of selected process
         std::this_thread::sleep_for(std::chrono::milliseconds(shared_data->context_switch));
 
@@ -253,9 +268,10 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         current_process->setCpuCore(core_id);
 
         // Ready to Running
-        uint64_t current_time = currentTime();
+        current_time = currentTime();
         current_process->setState(Process::State::Running, current_time);
         current_process->setBurstStartTime(current_time); //account for start of burst
+        uint64_t run_start = current_time;
 
         // execute burst on CPU until completed or preempted (PP or RR)
         while(current_process->getBurstTime() > 0){
@@ -265,9 +281,11 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             current_time = currentTime(); 
             current_process->updateProcess(current_time);
 
-            // RR --preempt if time-slice expired and process isn’t terminated. 
-            // Break out of loop to context switch
-
+            if(shared_data->algorithm == ScheduleAlgorithm::RR){
+                if((current_time - run_start) >= shared_data->time_slice){
+                    break;
+                }
+            }
             // PP -- preempt if higher priority process entered the ready-queue. 
             // Break out of loop to context switch
 
@@ -275,6 +293,19 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
         // context switch -- dispatcher saves state of process before core is removed
         std::this_thread::sleep_for(std::chrono::milliseconds(shared_data->context_switch));
+
+        current_time = currentTime();
+
+        if(shared_data->algorithm == ScheduleAlgorithm::RR &&
+        current_process->getBurstTime() > 0){
+            current_process->setState(Process::State::Ready, current_time);
+            current_process->setCpuCore(-1);
+            current_process->setReadyEnterTime(current_time);
+
+            std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+            shared_data->ready_queue.push_back(current_process);
+            continue;
+        }
 
         // dipatcher handles updating the process with its next burst and 
         // updating its state to IO or Terminated

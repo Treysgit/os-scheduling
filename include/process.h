@@ -25,6 +25,7 @@ private:
     int32_t remain_time;        // CPU time remaining until terminated
     int32_t total_time;         // total CPU time for all bursts
     uint64_t launch_time;       // actual time in ms (since epoch) that process was 'launched'
+    uint64_t ready_enter_time;
     // you are welcome to add other private data fields here if you so choose
 
 public:
@@ -56,6 +57,12 @@ public:
 
     void updateProcess(uint64_t current_time);
     void updateBurstTime(int burst_idx, uint32_t new_time);
+
+    void setReadyEnterTime(uint64_t t);
+    uint64_t getReadyEnterTime() const;
+    void addWaitTime(uint64_t delta);
+
+    
 };
 
 #endif // __PROCESS_H_
