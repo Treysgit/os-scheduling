@@ -172,10 +172,10 @@ void Process::updateProcess(uint64_t current_time)
     }
 
     //Case 1: Ready state update (no burst consumed)
-    if(state == State::Ready){
-        wait_time += elapsed; //update time spent in current Ready state
-        turn_time += elapsed; //update aggregate time since entering ready-queue
-    }
+    // if(state == State::Ready){
+    //     wait_time += elapsed; //update time spent in current Ready state
+    //     turn_time += elapsed; //update aggregate time since entering ready-queue
+    // }
 
     //Case 2: Running state update (CPU burst consumed)
     else if(state == State::Running){

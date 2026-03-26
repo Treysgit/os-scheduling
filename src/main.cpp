@@ -250,6 +250,8 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 current_process = shared_data->ready_queue.front();
                 shared_data->ready_queue.pop_front();
                 found = 1;
+                printw("Core %d picked PID %d\n", core_id, current_process->getPid());
+                refresh();
             }
         } // mutex scope
 
