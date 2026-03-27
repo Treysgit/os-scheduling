@@ -273,6 +273,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         std::this_thread::sleep_for(std::chrono::milliseconds(shared_data->context_switch));
 
         uint64_t current_time = currentTime();
+        uint64_t run_start = current_time;
         // Ready to Running
         {
             std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
@@ -288,7 +289,6 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         while(true){
             
             uint64_t burst_time;
-            uint64_t run_start = currentTime();
             {
                 std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
                 burst_time = current_process->getBurstTime();
