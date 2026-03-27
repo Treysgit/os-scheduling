@@ -12,7 +12,8 @@
 
 // Shared data for all cores
 typedef struct SchedulerData {
-    std::mutex queue_mutex; 
+    std::mutex process_mutex; // for process altering
+    std::mutex queue_mutex; // ONLY for altering ready-queue --> empty(), front(), pop_front(), push_back(), insert()
     ScheduleAlgorithm algorithm; //1 of 4
     uint32_t context_switch; //time of switching processes on a core
     uint32_t time_slice; //fixed time-slice for RR
@@ -66,24 +67,17 @@ int main(int argc, char *argv[])
     {
         Process *p = new Process(config->processes[i], start); // create a new process object for process i, p pointer to heap
         processes.push_back(p); //vector for all processes (not just ready ones)
-
-        int push2queue = 0;
-        { //mutex scope
-            std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
             
             // If created process's start time is 0, it is ready to be put on ready-queue immidiately
             if (p->getState() == Process::State::Ready){
+                    std::lock_guard<std::mutex> p_lock(shared_data->process_mutex); //for altering process
+                    std::lock_guard<std::mutex> q_lock(shared_data->queue_mutex); //ready-queue altered in algo_SYNCH
+
                     p->setState(Process::State::Ready, start); // Set notStarted to Ready. Give launch time
                     p->setReadyEnterTime(start); // for waiting-time metric (needs aggregate time in ready-queue)
-                    push2queue = 1;
+                    algo_SYNCH(shared_data, p);
             
             }
-        } //mutex scope
-
-        if(push2queue){
-            algo_SYNCH(shared_data, p);
-
-        }
 
         //vectors:
         // processes --> for keeping track of all processes 
@@ -98,7 +92,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < num_cores; i++)
     {
         // create and run dispatcher threads for each core, store thread objects in array 
-        schedule_threads[i] = std::thread(coreRunProcesses, i, shared_data);
+        schedule_threads[i] = std::thread(coreRunProcesses, i, shared_data); //heap
     }
 
     // Main thread work goes here
@@ -123,21 +117,16 @@ int main(int argc, char *argv[])
         for(int i = 0 ; i < processes.size() ; i++){
 
             Process *p = processes[i]; // pointer to process i
-            int push2queue = 0;
             { //mutex scope
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+                std::lock_guard<std::mutex> lock(shared_data->process_mutex);
                 
                 if (p->getState() == Process::State::NotStarted && (elapsed >= p->getStartTime())){
+                        std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //ready-queue altered in algo_SYNCH
                         p->setState(Process::State::Ready, current_time); // Set notStarted to Ready. Give launch time
                         p->setReadyEnterTime(current_time); // for waiting-time metric (needs aggregate time in ready-queue)
-                        push2queue = 1;
-            }
+                        algo_SYNCH(shared_data, p);
+                 }
             } //mutex scope
-
-            if(push2queue){
-                algo_SYNCH(shared_data, p);
-
-            }
             
         }
 
@@ -146,28 +135,24 @@ int main(int argc, char *argv[])
         for(int i = 0 ; i < processes.size() ; i++){
 
             Process *p = processes[i]; // pointer to process i
-            int push2queue = 0;
             { //mutex scope
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+                std::lock_guard<std::mutex> lock(shared_data->process_mutex);
                 
                 if (p->getState() == Process::State::IO){
                     p->updateProcess(current_time); 
                     // if IO burst time is updated to 0, it is completed
                     if(p->getBurstTime() == 0){
+                        std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //rq altered in algo_SYNCH
                         p->incrementBurst(); //update burst index
                         p->setState(Process::State::Ready, current_time); // Set notStarted to Ready. Give launch time
                         p->setReadyEnterTime(current_time); // for waiting-time metric (needs aggregate time in ready-queue)
-                        push2queue = 1;
+                        algo_SYNCH(shared_data, p);
                     }
                 }
-            } //mutex scope
-
-            if(push2queue){
-                algo_SYNCH(shared_data, p);
-
             }
-            
-        }
+
+         } 
+        
 
 
         // Task 3: preempt check (RR or PP)
@@ -182,7 +167,7 @@ int main(int argc, char *argv[])
         // Task 4: Check if all process terminated
         
         int flag = 1;
-        std::lock_guard<std::mutex> lock(shared_data->queue_mutex); // lock critical section
+        std::lock_guard<std::mutex> lock(shared_data->process_mutex); // lock critical section
         for(int i = 0 ; i < processes.size() ; i++){
             if(processes[i]->getState() != Process::State::Terminated){
                 //if any are not Terminated, CPUs need to run still
@@ -232,7 +217,14 @@ int main(int argc, char *argv[])
 
 
     // Clean up before quitting program
-    processes.clear();
+    for(int i = 0 ; i< processes.size() ; i++){
+        delete processes[i]; //delete actual processes
+    }
+    processes.clear(); //delete pointers
+    delete[] schedule_threads;//free heap
+    delete shared_data; //free heap
+
+
     endwin();
 
     return 0;
@@ -248,7 +240,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         int found = 0; // flag
        
         { //mutex scope
-            std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //lock mutex for critical section
+            std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //ready-queue mutex
 
             if(!(shared_data->ready_queue.empty())){  // make sure queue isn't empty
                 current_process = shared_data->ready_queue.front(); // head process
@@ -276,7 +268,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         uint64_t run_start = current_time;
         // Ready to Running
         {
-            std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+            std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
 
             current_process->setCpuCore(core_id);  // set CPU core to process retrieved
             current_process->addWaitTime(current_time - current_process->getReadyEnterTime());
@@ -290,7 +282,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             
             uint64_t burst_time;
             {
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+                std::lock_guard<std::mutex> lock(shared_data->process_mutex);  //process mutex
                 burst_time = current_process->getBurstTime();
             }
 
@@ -303,7 +295,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             // update burst consumption 
             current_time = currentTime(); 
             {
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+                std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
                 current_process->updateProcess(current_time);
             }
             
@@ -326,7 +318,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         uint64_t remaining_burst;
         uint64_t remaining_total;
         {
-            std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+            std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
             remaining_burst = current_process->getBurstTime(); // remaining time in current burst
             remaining_total = current_process->getRemainingTime(); //aggregate CPU total time
         }
@@ -334,21 +326,23 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         if(shared_data->algorithm == ScheduleAlgorithm::RR &&
         remaining_burst > 0){
             {
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+                std::lock_guard<std::mutex> lock_p(shared_data->process_mutex); //process mutex
+                std::lock_guard<std::mutex> lock_q(shared_data->queue_mutex); //for algo_SYNCH
                 current_process->setState(Process::State::Ready, current_time);
                 current_process->setCpuCore(-1);
                 current_process->setReadyEnterTime(current_time);
-                shared_data->ready_queue.push_back(current_process);
+                algo_SYNCH(shared_data, current_process);
+                continue;
 
             }
-            continue;
+        
         }
 
         // Last task -- dispatcher handles updating the process with its next burst and 
         // updating its state to IO or Terminated
         if(remaining_burst == 0){
-            {
-                std::lock_guard<std::mutex> lock(shared_data->queue_mutex);
+               {//mutex scope
+                std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
                 current_process->incrementBurst(); //update burst index
 
                 //Case 1: Running to Terminate
@@ -365,7 +359,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                     current_process->setCpuCore(-1); //remove core
 
                 }
-            }
+              }//mutex scope
 
 
         }
@@ -404,14 +398,14 @@ void printProcessOutput(std::vector<Process*>& processes)
         {
             uint16_t pid = processes[i]->getPid();
             uint8_t priority = processes[i]->getPriority();
-            std::string queue_mutex = processStateToString(processes[i]->getState());
+            std::string process_mutex = processStateToString(processes[i]->getState());
             int8_t core = processes[i]->getCpuCore();
             std::string cpu_core = (core >= 0) ? std::to_string(core) : "--";
             double total_time = processes[i]->getTotalRunTime();
             double completed_time = total_time - processes[i]->getRemainingTime();
             std::string progress = makeProgressString(completed_time / total_time, 36);
             printw("| %5u | %8u | %11s | %4s | %36s |\n", pid, priority,
-                   queue_mutex.c_str(), cpu_core.c_str(), progress.c_str());
+                   process_mutex.c_str(), cpu_core.c_str(), progress.c_str());
         }
     }
     refresh();
@@ -483,22 +477,22 @@ std::string processStateToString(Process::State state)
         // list.begin() returns an iterator of first element
         std::list<Process*>::iterator i = ready_queue.begin();
 
-        //loop through sorted ready-queue, insert when p burst < burst at index
+        //loop through sorted ready-queue, insert when p CPU time < process at index
         while(i != ready_queue.end()){
 
             //get process at index i
-            Process *p_i = *i; // return pointer at index
+            Process *p_i = *i; // returns pointer stored at index
 
-            //check if process p burst is < burst at index i
-            if(p->getBurstTime() < p_i->getBurstTime()){
+            //check if process p aggregate CPU time < that of p_i
+            if(p->getRemainingTime() < p_i->getRemainingTime()){
                 break; // found insertion spot, break out of loop
             }
-            i++;
+            i++; // move to next process
         }
         // list.insert(iterator position, const T& value)
         ready_queue.insert(
             i, // iterator with updated index
-            p //process to insert
+            p //process to insert at index
         );
     }
 
