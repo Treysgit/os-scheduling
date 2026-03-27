@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
                         std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //ready-queue altered in algo_SYNCH
                         p->setState(Process::State::Ready, current_time); // Set notStarted to Ready. Give launch time
                         p->setReadyEnterTime(current_time); // for waiting-time metric (needs aggregate time in ready-queue)
+                        p->setBurstStartTime(current_time);
                         algo_SYNCH(shared_data, p);
                  }
             } //mutex scope
@@ -146,6 +147,7 @@ int main(int argc, char *argv[])
                         p->incrementBurst(); //update burst index
                         p->setState(Process::State::Ready, current_time); // Set notStarted to Ready. Give launch time
                         p->setReadyEnterTime(current_time); // for waiting-time metric (needs aggregate time in ready-queue)
+                        p->setBurstStartTime(current_time);
                         algo_SYNCH(shared_data, p);
                     }
                 }
@@ -248,8 +250,8 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 found = 1;
 
                 //debug print statment
-                std::cerr << "Core " << (int)core_id
-                << " picked PID " << current_process->getPid() << std::endl;
+                // std::cerr << "Core " << (int)core_id
+                // << " picked PID " << current_process->getPid() << std::endl;
             }
         } // mutex scope
 
@@ -331,6 +333,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 current_process->setState(Process::State::Ready, current_time);
                 current_process->setCpuCore(-1);
                 current_process->setReadyEnterTime(current_time);
+                current_process->setBurstStartTime(current_time);
                 algo_SYNCH(shared_data, current_process);
                 continue;
 
@@ -469,6 +472,7 @@ std::string processStateToString(Process::State state)
                 }
 
     }
+    
 
 
     void algo_SJF(std::list<Process*>& ready_queue, Process* p){
