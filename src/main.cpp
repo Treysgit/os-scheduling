@@ -31,6 +31,7 @@ std::string processStateToString(Process::State state); // convert the state (e.
 void algo_SYNCH(SchedulerData *shared_data, Process* p);
 void algo_SJF(std::list<Process*>& ready_queue, Process* p);
 void algo_PP(std::list<Process*>& ready_queue, Process* p);
+void pp_preemptScan(std::list<Process*>& processes, SchedulerData *shared_data);
 
 
 int main(int argc, char *argv[])
@@ -155,12 +156,9 @@ int main(int argc, char *argv[])
         
 
 
-        // Task 3: preempt check (RR or PP)
-                if(shared_data->algorithm == ScheduleAlgorithm::RR){
-                    // helper function 
-                  }
-                else if(shared_data->algorithm == ScheduleAlgorithm::PP){
-                    //helper function 
+        // Task 3: preempt check PP  
+                if(shared_data->algorithm == ScheduleAlgorithm::PP){
+                    pp_preemptScan(processes, shared_data);
                  }
                  
 
@@ -266,6 +264,8 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
         uint64_t current_time = currentTime();
         uint64_t run_start = current_time;
+        int rr_preempt = 0;
+        int pp_preempt = 0;
         // Ready to Running
         {
             std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
@@ -299,13 +299,19 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 current_process->updateProcess(current_time);
             }
             
+            // RR -- preempt if time-slice expired
             if(shared_data->algorithm == ScheduleAlgorithm::RR){
                 if((current_time - run_start) >= shared_data->time_slice){
+                    rr_preempt = 1;
                     break;
                 }
             }
             // PP -- preempt if higher priority process entered the ready-queue. 
             // Break out of loop to context switch
+            if(shared_data->algorithm == ScheduleAlgorithm::PP){
+                // check for interruption (dont by main thread)
+                // if interrupted: pp_preempt = 1 
+            }
 
         }
 
@@ -323,8 +329,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             remaining_total = current_process->getRemainingTime(); //aggregate CPU total time
         }
 
-        if(shared_data->algorithm == ScheduleAlgorithm::RR &&
-        remaining_burst > 0){
+        if(rr_preempt){
             {
                 std::lock_guard<std::mutex> lock_p(shared_data->process_mutex); //process mutex
                 std::lock_guard<std::mutex> lock_q(shared_data->queue_mutex); //for algo_SYNCH
@@ -335,6 +340,10 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 continue;
 
             }
+
+        if(pp_preempt){
+            //lock, remove core, call algo_SYNCH
+        }
         
         }
 
@@ -498,4 +507,11 @@ std::string processStateToString(Process::State state)
 
     void algo_PP(std::list<Process*>& ready_queue, Process* p){
         // implement
+    }
+
+    void pp_preemptScan(std::list<Process*>& processes, SchedulerData *shared_data){
+        std::lock_guard<std::mutex> lock_a(shared_data->process_mutex); 
+        std::lock_guard<std::mutex> lock_b(shared_data->queue_mutex);
+
+        //implement 
     }
