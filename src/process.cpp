@@ -200,6 +200,9 @@ void Process::updateProcess(uint64_t current_time)
         turn_time += consumed; //update aggregate time since entering ready-queue
 
     }
+    else if(state == State::Ready){
+        turn_time += elapsed;
+    }
 
     // updates of elapsed time accounted for. Reset for next update
     burst_start_time = current_time;

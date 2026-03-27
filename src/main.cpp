@@ -9,6 +9,7 @@
 #include <ncurses.h>
 #include "configreader.h"
 #include "process.h"
+#include <algorithm>
 
 // Shared data for all cores
 typedef struct SchedulerData {
@@ -118,10 +119,10 @@ int main(int argc, char *argv[])
 
             Process *p = processes[i]; // pointer to process i
             { //mutex scope
-                std::lock_guard<std::mutex> lock(shared_data->process_mutex);
+                std::lock_guard<std::mutex> p_lock(shared_data->process_mutex);
                 
                 if (p->getState() == Process::State::NotStarted && (elapsed >= p->getStartTime())){
-                        std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //ready-queue altered in algo_SYNCH
+                        std::lock_guard<std::mutex> q_lock(shared_data->queue_mutex); //ready-queue altered in algo_SYNCH
                         p->setState(Process::State::Ready, current_time); // Set notStarted to Ready. Give launch time
                         p->setReadyEnterTime(current_time); // for waiting-time metric (needs aggregate time in ready-queue)
                         p->setBurstStartTime(current_time);
@@ -137,13 +138,13 @@ int main(int argc, char *argv[])
 
             Process *p = processes[i]; // pointer to process i
             { //mutex scope
-                std::lock_guard<std::mutex> lock(shared_data->process_mutex);
+                std::lock_guard<std::mutex> p_lock(shared_data->process_mutex);
                 
                 if (p->getState() == Process::State::IO){
                     p->updateProcess(current_time); 
                     // if IO burst time is updated to 0, it is completed
                     if(p->getBurstTime() == 0){
-                        std::lock_guard<std::mutex> lock(shared_data->queue_mutex); //rq altered in algo_SYNCH
+                        std::lock_guard<std::mutex> q_lock(shared_data->queue_mutex); //rq altered in algo_SYNCH
                         p->incrementBurst(); //update burst index
                         p->setState(Process::State::Ready, current_time); // Set notStarted to Ready. Give launch time
                         p->setReadyEnterTime(current_time); // for waiting-time metric (needs aggregate time in ready-queue)
@@ -163,6 +164,24 @@ int main(int argc, char *argv[])
                   }
                 else if(shared_data->algorithm == ScheduleAlgorithm::PP){
                     //helper function 
+                    std::lock_guard<std::mutex> lock(shared_data->process_mutex);
+
+                    for(int i = 0; i < processes.size(); i++){
+                        Process *new_p = processes[i];
+
+                        if(new_p->getState() != Process::State::Ready)
+                            continue;
+
+                        for(int j = 0; j < processes.size(); j++){
+                            Process *running = processes[j];
+
+                            if(running->getState() == Process::State::Running){
+                                if(running->getPriority() > new_p->getPriority()){
+                                    running->interrupt();
+                                }
+                            }
+                        }
+                    }
                  }
                  
 
@@ -206,6 +225,45 @@ int main(int argc, char *argv[])
     //     - Overall average
     //  - Average turnaround time
     //  - Average waiting time
+
+    //CPU util and turnaround
+    double total_cpu = 0.0;
+    double total_turn = 0.0;
+    double max_time = 0.0;
+
+    std::vector<double> finish_times;
+
+    for (int i = 0; i < processes.size(); i++)
+    {
+        double cpu = processes[i]->getCpuTime();
+        double turn = processes[i]->getTurnaroundTime();
+
+        total_cpu += cpu;
+        total_turn += turn;
+
+        finish_times.push_back(turn);
+
+        if (turn > max_time)
+            max_time = turn;
+    }
+
+    //CPU util
+    double cpu_util = (total_cpu / (max_time * num_cores)) * 100.0;
+
+    //turnaround time
+    double avg_turn = total_turn / processes.size();
+
+    //throughput
+    std::sort(finish_times.begin(), finish_times.end());
+
+    int half = processes.size() / 2;
+
+    double first_half = half / finish_times[half - 1];
+    double second_half = (processes.size() - half) /
+                        (finish_times.back() - finish_times[half]);
+    double overall = processes.size() / finish_times.back();
+    
+    //waiting
     double total_wait = 0.0;
     for (int i = 0; i < processes.size(); i++)
     {
@@ -214,7 +272,12 @@ int main(int argc, char *argv[])
 
     double avg_wait = total_wait / processes.size();
 
-    printw("Average waiting time: %.2f ms\n", avg_wait);
+    printw("\nCPU Utilization: %.2f%%\n", cpu_util);
+    printw("Throughput (first 50%%): %.2f processes/sec\n", first_half);
+    printw("Throughput (second 50%%): %.2f processes/sec\n", second_half);
+    printw("Throughput (overall avg): %.2f processes/sec\n", overall);
+    printw("Average Turnaround Time: %.2f sec\n", avg_turn);
+    printw("Average waiting time: %.2f sec\n", avg_wait);
     refresh();
 
 
@@ -300,6 +363,14 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
                 current_process->updateProcess(current_time);
             }
+
+            //PP preempt
+            {
+                std::lock_guard<std::mutex> lock(shared_data->process_mutex);
+                if(current_process->isInterrupted()){
+                    break;
+                }
+            }
             
             if(shared_data->algorithm == ScheduleAlgorithm::RR){
                 if((current_time - run_start) >= shared_data->time_slice){
@@ -323,6 +394,20 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             std::lock_guard<std::mutex> lock(shared_data->process_mutex); //process mutex
             remaining_burst = current_process->getBurstTime(); // remaining time in current burst
             remaining_total = current_process->getRemainingTime(); //aggregate CPU total time
+        }
+
+        if(current_process->isInterrupted()){
+            std::lock_guard<std::mutex> lock_p(shared_data->process_mutex);
+            std::lock_guard<std::mutex> lock_q(shared_data->queue_mutex);
+
+            current_process->interruptHandled();
+            current_process->setState(Process::State::Ready, current_time);
+            current_process->setCpuCore(-1);
+            current_process->setReadyEnterTime(current_time);
+            current_process->setBurstStartTime(current_time);
+
+            algo_SYNCH(shared_data, current_process);
+            continue;
         }
 
         if(shared_data->algorithm == ScheduleAlgorithm::RR &&
@@ -502,4 +587,16 @@ std::string processStateToString(Process::State state)
 
     void algo_PP(std::list<Process*>& ready_queue, Process* p){
         // implement
+        std::list<Process*>::iterator i = ready_queue.begin();
+
+        while(i != ready_queue.end()){
+            Process *p_i = *i;
+
+            if(p->getPriority() < p_i->getPriority()){
+                break;
+            }
+            i++;
+        }
+
+        ready_queue.insert(i, p);
     }
