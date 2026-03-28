@@ -35,6 +35,7 @@ Process::Process(ProcessDetails details, uint64_t current_time)
         total_time += burst_times[i];
     }
     remain_time = total_time;
+    finish_time = 0;
 }
 
 Process::~Process()
@@ -70,6 +71,16 @@ uint64_t Process::getBurstTime() const{
 // added for dispatcher
 void Process::incrementBurst(){
     current_burst++; // index increment
+}
+
+void Process::setFinishTime(uint64_t t)
+{
+    finish_time = t;
+}
+
+uint64_t Process::getFinishTime() const
+{
+    return finish_time;
 }
 
 

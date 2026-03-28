@@ -28,6 +28,7 @@ private:
 
     //added
     uint64_t ready_enter_time;
+    uint64_t finish_time; 
 
 
 public:
@@ -40,6 +41,9 @@ public:
     void setReadyEnterTime(uint64_t t);
     uint64_t getReadyEnterTime() const;
     void addWaitTime(uint64_t delta);
+    void setFinishTime(uint64_t t);
+    uint64_t getFinishTime() const;
+
     
 
     uint16_t getPid() const;
