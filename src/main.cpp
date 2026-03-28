@@ -241,6 +241,8 @@ int main(int argc, char *argv[])
     {
         schedule_threads[i].join();
     }
+    erase();
+    move(0, 0);
 
     // CPU utilization
     uint64_t end = currentTime();
@@ -255,7 +257,7 @@ int main(int argc, char *argv[])
     if(elapsed_s > 0){
         utility = (cpu_busy / (elapsed_s * num_cores)) * 100.0; //compute percentage of time CPU wasn't idle
     }
-    printw("CPU util: %.2f&&\n", utility);
+
 
     // Avg waiting time
     double total_wait = 0.0;
